@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useSearchParams } from 'next/navigation';
+import { useSearchParams, useRouter } from 'next/navigation';
 
 const musicInsights = [
   {
@@ -53,46 +53,26 @@ const musicInsights = [
     icon: "🔥",
     title: "Thermal Noise",
     fact: "Even the best analog equipment generates thermal noise from electrons moving in resistors - it's the physical limit of quiet!"
-  },
-  {
-    icon: "🎤",
-    title: "Proximity Effect",
-    fact: "Directional microphones boost bass frequencies when sources get closer. This is why radio DJs sound so deep and rich up close."
-  },
-  {
-    icon: "🌟",
-    title: "Harmonic Distortion",
-    fact: "Tube amplifiers add even-order harmonics (2nd, 4th) which sound musical, while transistors add odd-order harmonics that can sound harsh."
-  },
-  {
-    icon: "📈",
-    title: "Streaming Economics",
-    fact: "Spotify pays roughly $0.003-0.005 per stream. You'd need about 250,000 streams per month to earn minimum wage from streaming alone."
-  },
-  {
-    icon: "🎚️",
-    title: "Mix Translation",
-    fact: "Professional engineers test mixes on car speakers, phones, and cheap earbuds because that's where 90% of listeners will hear your music."
-  },
-  {
-    icon: "🧠",
-    title: "Psychoacoustics",
-    fact: "Your brain 'fills in' missing fundamental frequencies. A 100Hz sine wave with strong 200Hz and 300Hz harmonics still sounds like 100Hz!"
   }
 ];
 
 export default function ProcessingPage() {
   const searchParams = useSearchParams();
+  const router = useRouter();
+  
   const trackName = searchParams.get('track') || 'Your Track';
   const preset = searchParams.get('preset') || 'Hip Hop';
   const mode = searchParams.get('mode') || 'preset';
   const hasReference = searchParams.get('hasReference') === 'true';
+  const paymentConfirmed = searchParams.get('paymentConfirmed') === 'true';
+  const paymentId = searchParams.get('paymentId');
 
   const [progress, setProgress] = useState(0);
   const [currentInsight, setCurrentInsight] = useState(0);
   const [currentStage, setCurrentStage] = useState(0);
   const [isComplete, setIsComplete] = useState(false);
-  const [debugInfo, setDebugInfo] = useState<string>('');
+  const [error, setError] = useState<string | null>(null);
+  const [processingStatus, setProcessingStatus] = useState('Initializing...');
 
   const processingStages = [
     { name: "Analyzing Audio", duration: 15, description: "Examining frequency spectrum and dynamics" },
@@ -101,89 +81,69 @@ export default function ProcessingPage() {
     { name: "Finalizing", duration: 100, description: "Preparing your mastered track" }
   ];
 
-  useEffect(() => {
-    console.log('🎵 Processing page loaded with params:', { trackName, preset, mode, hasReference });
+  const redirectToResults = (sessionId: string, downloadUrl?: string) => {
+    console.log('🎉 Redirecting to results page...', { sessionId, downloadUrl });
     
-    // Check if payment was confirmed
-    const paymentConfirmed = searchParams.get('paymentConfirmed') === 'true';
-    const paymentId = searchParams.get('paymentId');
-    
-    if (!paymentConfirmed) {
-      console.log('❌ No payment confirmation, redirecting to payment...');
-      window.location.href = `/payment?track=${encodeURIComponent(trackName)}&preset=${encodeURIComponent(preset)}&mode=${mode}&hasReference=${hasReference}`;
-      return;
-    }
-    
-    console.log('✅ Payment confirmed, starting processing...', paymentId);
-    
-    // Check if we have processing data
-    const processingData = sessionStorage.getItem('pendingTrackData');
-    console.log('📦 Processing data from session:', processingData ? 'Found' : 'Not found');
-    
-    // Check if we have FormData
-    const hasSourceFile = !!(window as any).pendingSourceFile;
-    const hasReferenceFile = !!(window as any).pendingReferenceFile;
-    console.log('📋 Files available:', { source: hasSourceFile, reference: hasReferenceFile });
-    
-    setDebugInfo(`Payment: ✅ | Track: ${trackName} | Preset: ${preset} | Files: ${hasSourceFile ? 'Yes' : 'No'}`);
-
-    let processingTimer: NodeJS.Timeout;
-    let insightTimer: NodeJS.Timeout;
-
-    const startProcessing = () => {
-      console.log('🚀 Starting processing simulation...');
+    setTimeout(() => {
+      const params = new URLSearchParams({
+        session: sessionId,
+        track: trackName,
+        preset: preset,
+        fromProcessing: 'true'
+      });
       
-      // Progress simulation
-      processingTimer = setInterval(() => {
-        setProgress(prev => {
-          const newProgress = prev + (Math.random() * 2) + 0.5;
-          
-          const stageIndex = processingStages.findIndex(stage => newProgress < stage.duration);
-          setCurrentStage(stageIndex === -1 ? processingStages.length - 1 : Math.max(0, stageIndex));
-          
-          if (newProgress >= 100) {
-            clearInterval(processingTimer);
-            setIsComplete(true);
-            console.log('✅ Processing simulation complete, calling API...');
-            
-            setTimeout(() => {
-              handleActualProcessing();
-            }, 2000);
-            
-            return 100;
-          }
-          return newProgress;
-        });
-      }, 400);
-
-      // Insight rotation
-      insightTimer = setInterval(() => {
-        setCurrentInsight(prev => (prev + 1) % musicInsights.length);
-      }, 4000);
-    };
-
-    setTimeout(startProcessing, 1000);
-
-    return () => {
-      clearInterval(processingTimer);
-      clearInterval(insightTimer);
-    };
-  }, [searchParams, trackName, preset, mode, hasReference]);
+      if (downloadUrl) {
+        params.set('downloadUrl', downloadUrl);
+      }
+      
+      router.push(`/results?${params}`);
+    }, 2000);
+  };
 
   const handleActualProcessing = async () => {
     try {
       console.log('🎵 Starting actual audio processing...');
+      setProcessingStatus('Preparing files for processing...');
       
-      // Try to get files from global variables (set by generator page)
-      const sourceFile = (window as any).pendingSourceFile;
-      const referenceFile = (window as any).pendingReferenceFile;
+      // Get files from global variables or session storage
+      let sourceFile = (window as any).pendingSourceFile;
+      let referenceFile = (window as any).pendingReferenceFile;
+      
+      // Fallback: try to reconstruct from session storage
+      if (!sourceFile) {
+        console.log('🔄 Trying to recover files from session storage...');
+        const processingData = sessionStorage.getItem('processingData');
+        if (processingData) {
+          const data = JSON.parse(processingData);
+          if (data.sourceFile && data.sourceFile.url) {
+            try {
+              const response = await fetch(data.sourceFile.url);
+              const blob = await response.blob();
+              sourceFile = new File([blob], data.sourceFile.name, { type: data.sourceFile.type });
+              
+              if (data.referenceFile && data.referenceFile.url) {
+                const refResponse = await fetch(data.referenceFile.url);
+                const refBlob = await refResponse.blob();
+                referenceFile = new File([refBlob], data.referenceFile.name, { type: data.referenceFile.type });
+              }
+            } catch (error) {
+              console.log('URL reconstruction failed:', error);
+            }
+          }
+        }
+      }
       
       if (!sourceFile) {
         console.log('⚠️ No source file found, using demo mode...');
-        // Continue with demo processing
+        setProcessingStatus('Running in demo mode...');
         redirectToResults('demo-session-id');
         return;
       }
+
+      console.log('✅ Files ready for processing:', {
+        source: sourceFile.name,
+        reference: referenceFile?.name
+      });
 
       // Create FormData for API call
       const formData = new FormData();
@@ -194,7 +154,9 @@ export default function ProcessingPage() {
       formData.append('preset', preset);
       formData.append('paymentConfirmed', 'true');
       
-      console.log('📤 Calling API with form data...');
+      setProcessingStatus('Uploading files to server...');
+      
+      console.log('📤 Calling mastering API...');
 
       const response = await fetch('/api/generate-master', {
         method: 'POST',
@@ -204,7 +166,9 @@ export default function ProcessingPage() {
       console.log('📥 API response status:', response.status);
 
       if (!response.ok) {
-        throw new Error(`API error: ${response.status}`);
+        const errorText = await response.text();
+        console.error('API Error Response:', errorText);
+        throw new Error(`Server error: ${response.status} - ${errorText}`);
       }
 
       const result = await response.json();
@@ -212,36 +176,96 @@ export default function ProcessingPage() {
 
       if (result.success) {
         console.log('✅ Processing completed successfully');
+        setProcessingStatus('Processing complete! Preparing results...');
+        
+        // Store result for results page
         sessionStorage.setItem('processingResult', JSON.stringify(result));
-        redirectToResults(result.sessionId);
+        
+        // Clean up file URLs to prevent memory leaks
+        if (sourceFile && (window as any).pendingSourceFile) {
+          URL.revokeObjectURL((window as any).pendingSourceFile.url);
+        }
+        if (referenceFile && (window as any).pendingReferenceFile) {
+          URL.revokeObjectURL((window as any).pendingReferenceFile.url);
+        }
+        
+        redirectToResults(result.sessionId, result.downloadUrl);
       } else {
         console.error('❌ API returned error:', result.error);
-        redirectToResults('demo-session-id'); // Continue to results anyway for demo
+        throw new Error(result.error);
       }
 
     } catch (error) {
       console.error('❌ Processing error:', error);
-      console.log('🔄 Continuing to results for demo purposes...');
-      
-      // For demo, continue to results even if API fails
-      redirectToResults('demo-session-id');
+      setError(error instanceof Error ? error.message : 'Unknown processing error');
+      setProcessingStatus('Processing failed');
     }
   };
 
-  const redirectToResults = (sessionId: string) => {
-    console.log('🎉 Redirecting to results page...');
+  useEffect(() => {
+    console.log('🎵 Processing page loaded with params:', { 
+      trackName, preset, mode, hasReference, paymentConfirmed, paymentId 
+    });
     
-    setTimeout(() => {
-      const params = new URLSearchParams({
-        session: sessionId,
-        track: trackName,
-        preset: preset,
-        downloadUrl: '/downloads/demo-track.wav',
-        fromProcessing: 'true'
-      });
-      window.location.href = `/results?${params}`;
-    }, 2000);
-  };
+    // Check payment confirmation
+    if (!paymentConfirmed) {
+      console.log('❌ No payment confirmation, redirecting to payment...');
+      router.push(`/payment?track=${encodeURIComponent(trackName)}&preset=${encodeURIComponent(preset)}&mode=${mode}&hasReference=${hasReference}`);
+      return;
+    }
+    
+    console.log('✅ Payment confirmed, starting processing...', paymentId);
+
+    let processingTimer: NodeJS.Timeout;
+    let insightTimer: NodeJS.Timeout;
+
+    const startProcessing = () => {
+      console.log('🚀 Starting processing simulation...');
+      setProcessingStatus('Analyzing your audio file...');
+      
+      // Progress simulation
+      processingTimer = setInterval(() => {
+        setProgress(prev => {
+          const newProgress = prev + (Math.random() * 1.5) + 0.8;
+          
+          const stageIndex = processingStages.findIndex(stage => newProgress < stage.duration);
+          const currentStageIndex = stageIndex === -1 ? processingStages.length - 1 : Math.max(0, stageIndex);
+          setCurrentStage(currentStageIndex);
+          
+          // Update status based on stage
+          if (currentStageIndex < processingStages.length) {
+            setProcessingStatus(processingStages[currentStageIndex].description);
+          }
+          
+          if (newProgress >= 95) {
+            clearInterval(processingTimer);
+            setProcessingStatus('Finalizing mastered track...');
+            
+            // Start actual processing when simulation is nearly complete
+            setTimeout(() => {
+              handleActualProcessing();
+            }, 1500);
+            
+            return 95; // Cap at 95% until actual processing completes
+          }
+          return newProgress;
+        });
+      }, 300);
+
+      // Insight rotation
+      insightTimer = setInterval(() => {
+        setCurrentInsight(prev => (prev + 1) % musicInsights.length);
+      }, 4000);
+    };
+
+    // Start processing after a brief delay
+    setTimeout(startProcessing, 1000);
+
+    return () => {
+      clearInterval(processingTimer);
+      clearInterval(insightTimer);
+    };
+  }, [searchParams, trackName, preset, mode, hasReference, paymentConfirmed, paymentId, router]);
 
   const getProgressColor = () => {
     if (progress < 25) return 'from-blue-500 to-purple-500';
@@ -249,6 +273,38 @@ export default function ProcessingPage() {
     if (progress < 75) return 'from-pink-500 to-red-500';
     return 'from-red-500 to-orange-500';
   };
+
+  if (error) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 flex items-center justify-center px-4">
+        <div className="max-w-md w-full bg-white/5 backdrop-blur-sm rounded-2xl p-8 text-center">
+          <div className="w-16 h-16 mx-auto mb-6 bg-red-500 rounded-full flex items-center justify-center">
+            <svg className="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </div>
+          
+          <h1 className="text-2xl font-bold text-white mb-4">Processing Failed</h1>
+          <p className="text-gray-300 mb-6">{error}</p>
+          
+          <div className="flex flex-col sm:flex-row gap-3">
+            <button
+              onClick={() => router.push('/generator')}
+              className="px-6 py-3 bg-purple-600 hover:bg-purple-700 text-white rounded-lg font-semibold transition-colors"
+            >
+              Try Again
+            </button>
+            <button
+              onClick={() => router.push('/')}
+              className="px-6 py-3 border border-white/20 hover:border-white/40 text-white rounded-lg font-semibold transition-colors"
+            >
+              Back to Home
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 flex items-center justify-center px-4">
@@ -267,14 +323,9 @@ export default function ProcessingPage() {
           </h1>
           <p className="text-gray-300 text-lg">
             {isComplete 
-              ? `Your track "${trackName}" is ready! Preparing payment...`
+              ? `Your track "${trackName}" is ready! Redirecting to results...`
               : `Working on "${trackName}" using ${preset} preset${hasReference ? ' with reference track' : ''}`
             }
-          </p>
-          
-          {/* Debug info - remove in production */}
-          <p className="text-gray-500 text-xs mt-2">
-            {debugInfo}
           </p>
         </div>
 
@@ -300,7 +351,7 @@ export default function ProcessingPage() {
             </div>
             
             <p className="text-gray-400 text-sm mt-2">
-              {processingStages[currentStage]?.description || 'Finalizing your track'}
+              {processingStatus}
             </p>
           </div>
 
@@ -333,16 +384,6 @@ export default function ProcessingPage() {
                 <p className="text-xs text-gray-300 font-medium">{stage.name}</p>
               </div>
             ))}
-          </div>
-
-          {/* Time Estimate */}
-          <div className="text-center">
-            <p className="text-gray-400 text-sm">
-              {isComplete 
-                ? 'Redirecting to payment...'
-                : 'Please wait while we optimize your audio'
-              }
-            </p>
           </div>
         </div>
 
@@ -401,7 +442,7 @@ export default function ProcessingPage() {
           
           <div className="text-center mt-4">
             <p className="text-gray-400 text-sm">
-              Real-time audio processing • 48kHz/24-bit output
+              Real FFmpeg audio processing • Professional mastering algorithms
             </p>
             <p className="text-gray-500 text-xs mt-2">
               Mode: {mode === 'reference' ? 'Reference Track Matching' : `${preset} Preset Optimization`}
@@ -409,25 +450,10 @@ export default function ProcessingPage() {
           </div>
         </div>
 
-        {/* Status Updates */}
-        {isComplete && (
-          <div className="text-center mt-8">
-            <div className="bg-green-500/20 border border-green-500/30 rounded-xl p-4 mb-4">
-              <p className="text-green-300 font-semibold">
-                ✅ Audio mastering complete! Your track has been professionally enhanced.
-              </p>
-            </div>
-            <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-purple-400 mx-auto"></div>
-            <p className="text-gray-400 text-sm mt-2">
-              Preparing secure checkout...
-            </p>
-          </div>
-        )}
-
         {/* Footer */}
         <div className="text-center mt-8">
           <p className="text-gray-500 text-sm">
-            🚀 Powered by advanced AI mastering algorithms
+            🚀 Powered by FFmpeg and advanced AI mastering algorithms
           </p>
         </div>
       </div>

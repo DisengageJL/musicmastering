@@ -24,6 +24,7 @@ export default function GeneratorPage() {
 
   const MAX_FILE_SIZE = 100 * 1024 * 1024; // 100MB
   const ALLOWED_FORMATS = ['audio/mpeg', 'audio/wav', 'audio/flac', 'audio/aac', 'audio/ogg'];
+  const COMPANY_NAME = "MasterAI";
 
   const validateFile = (file: File | null): { valid: boolean; error?: string } => {
     if (!file) return { valid: false, error: 'No file selected' };
@@ -68,6 +69,33 @@ export default function GeneratorPage() {
     }
   };
 
+  // Helper function to store files in IndexedDB
+  async function storeFileInIndexedDB(key: string, file: File): Promise<void> {
+    return new Promise((resolve, reject) => {
+      const request = indexedDB.open('MasterAI-Files', 1);
+      
+      request.onerror = () => reject(request.error);
+      
+      request.onsuccess = () => {
+        const db = request.result;
+        const transaction = db.transaction(['files'], 'readwrite');
+        const store = transaction.objectStore('files');
+        
+        store.put(file, key);
+        
+        transaction.oncomplete = () => resolve();
+        transaction.onerror = () => reject(transaction.error);
+      };
+      
+      request.onupgradeneeded = () => {
+        const db = request.result;
+        if (!db.objectStoreNames.contains('files')) {
+          db.createObjectStore('files');
+        }
+      };
+    });
+  }
+
   const handleGenerate = async () => {
     if (!sourceTrack) {
       setStatus({ type: 'error', message: 'Please upload your source track first' });
@@ -80,17 +108,24 @@ export default function GeneratorPage() {
     }
 
     setLoading(true);
-    setStatus({ type: 'info', message: '🎵 Preparing your track for processing...' });
+    setStatus({ type: 'info', message: '🎵 Preparing your track...' });
 
     try {
-      console.log("📤 Preparing to redirect to processing page...");
+      // Store files in multiple ways to ensure they persist
+      console.log('💾 Storing files for processing...', {
+        source: sourceTrack.name,
+        reference: referenceTrack?.name
+      });
+
+      // Method 1: Store as global variables
+      (window as any).pendingSourceFile = sourceTrack;
+      (window as any).pendingReferenceFile = referenceTrack;
       
-      // Create a temporary storage for the files using URL.createObjectURL
+      // Method 2: Store as object URLs in sessionStorage
       const sourceUrl = URL.createObjectURL(sourceTrack);
       const referenceUrl = referenceTrack ? URL.createObjectURL(referenceTrack) : null;
       
-      // Store processing data (small metadata only)
-      const processingData = {
+      const trackData = {
         sourceFile: {
           name: sourceTrack.name,
           size: sourceTrack.size,
@@ -108,26 +143,25 @@ export default function GeneratorPage() {
         timestamp: Date.now()
       };
 
-      // Store in sessionStorage (just metadata, not the actual files)
-      sessionStorage.setItem('processingData', JSON.stringify(processingData));
+      // Store both the data and a flag
+      sessionStorage.setItem('processingData', JSON.stringify(trackData));
+      sessionStorage.setItem('pendingTrackData', JSON.stringify(trackData));
+      sessionStorage.setItem('hasUploadedFiles', 'true');
       
-      // Also create FormData and store it temporarily
-      const formData = new FormData();
-      formData.append('source', sourceTrack);
-      if (referenceTrack) {
-        formData.append('reference', referenceTrack);
+      // Method 3: Store files in IndexedDB for larger files (backup method)
+      try {
+        await storeFileInIndexedDB('sourceFile', sourceTrack);
+        if (referenceTrack) {
+          await storeFileInIndexedDB('referenceFile', referenceTrack);
+        }
+        console.log('✅ Files stored in IndexedDB successfully');
+      } catch (error) {
+        console.log('IndexedDB storage failed, using other methods:', error);
       }
-      formData.append('preset', preset);
       
-      // Store the FormData in a global variable (not ideal but works for demo)
-      (window as any).pendingFormData = formData;
+      setStatus({ type: 'success', message: '✅ Track prepared! Redirecting to payment...' });
 
-      setStatus({ 
-        type: 'success', 
-        message: '✅ Track prepared! Redirecting to processing...' 
-      });
-
-      // Redirect to processing page
+      // Redirect to payment page
       setTimeout(() => {
         const params = new URLSearchParams({
           track: sourceTrack.name,
@@ -135,7 +169,7 @@ export default function GeneratorPage() {
           mode: masteringMode,
           hasReference: referenceTrack ? 'true' : 'false'
         });
-        window.location.href = `/processing?${params}`;
+        window.location.href = `/payment?${params}`;
       }, 1500);
       
     } catch (err: any) {
@@ -231,140 +265,155 @@ export default function GeneratorPage() {
   );
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 flex items-center justify-center px-4 py-8">
-      <div className="w-full max-w-2xl">
-        {/* Header */}
-        <div className="text-center mb-8">
-          <h1 className="text-4xl font-bold text-white mb-2">AI Audio Mastering</h1>
-          <p className="text-gray-300">Professional mastering powered by artificial intelligence</p>
-        </div>
-
-        {/* Main Card */}
-        <div className="bg-white rounded-2xl shadow-2xl p-8 space-y-6">
-          
-          {/* Source Track Upload */}
-          <FileUploadZone
-            file={sourceTrack}
-            onFileSelect={handleFileSelect}
-            onClear={clearFile}
-            type="source"
-            label="Source Track"
-            required
-          />
-
-          {/* Mastering Mode Selection */}
-          <div className="space-y-4">
-            <label className="block text-sm font-semibold text-gray-700">
-              Mastering Method
-            </label>
-            
-            <div className="grid grid-cols-2 gap-4">
-              <button
-                onClick={() => setMasteringMode('preset')}
-                className={`p-4 rounded-xl border-2 transition-all duration-200 ${
-                  masteringMode === 'preset'
-                    ? 'border-blue-500 bg-blue-50 text-blue-700'
-                    : 'border-gray-200 hover:border-gray-300 text-gray-600'
-                }`}
-              >
-                <div className="text-center">
-                  <div className="w-8 h-8 mx-auto mb-2 bg-gradient-to-r from-purple-500 to-pink-500 rounded-lg flex items-center justify-center">
-                    <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 100 4m0-4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 100 4m0-4v2m0-6V4" />
-                    </svg>
-                  </div>
-                  <p className="font-medium">Use Preset</p>
-                  <p className="text-xs opacity-75">AI-optimized settings</p>
-                </div>
-              </button>
-              
-              <button
-                onClick={() => setMasteringMode('reference')}
-                className={`p-4 rounded-xl border-2 transition-all duration-200 ${
-                  masteringMode === 'reference'
-                    ? 'border-blue-500 bg-blue-50 text-blue-700'
-                    : 'border-gray-200 hover:border-gray-300 text-gray-600'
-                }`}
-              >
-                <div className="text-center">
-                  <div className="w-8 h-8 mx-auto mb-2 bg-gradient-to-r from-green-500 to-teal-500 rounded-lg flex items-center justify-center">
-                    <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19V6l12-3v13M9 19a2 2 0 01-2 2H5a2 2 0 01-2-2V6a2 2 0 012-2h2a2 2 0 012 2v13zM9 19a2 2 0 002 2h2a2 2 0 002-2V9M9 19V9" />
-                    </svg>
-                  </div>
-                  <p className="font-medium">Reference Track</p>
-                  <p className="text-xs opacity-75">Match another song</p>
-                </div>
-              </button>
-            </div>
-          </div>
-
-          {/* Conditional Content */}
-          {masteringMode === 'preset' ? (
-            <div className="space-y-2">
-              <label className="block text-sm font-semibold text-gray-700">Genre Preset</label>
-              <select
-                className="w-full border-2 border-gray-200 px-4 py-3 rounded-xl bg-white text-gray-800 focus:border-blue-500 focus:outline-none transition-colors"
-                value={preset}
-                onChange={(e) => setPreset(e.target.value)}
-              >
-                <option value="Hip Hop">🎤 Hip Hop</option>
-                <option value="EDM">🎛️ EDM</option>
-                <option value="Podcast">🎙️ Podcast</option>
-                <option value="Lo-Fi">🌙 Lo-Fi</option>
-                <option value="Pop">🎵 Pop</option>
-                <option value="Rock">🎸 Rock</option>
-                <option value="Jazz">🎺 Jazz</option>
-                <option value="Classical">🎻 Classical</option>
-              </select>
-            </div>
-          ) : (
-            <FileUploadZone
-              file={referenceTrack}
-              onFileSelect={handleFileSelect}
-              onClear={clearFile}
-              type="reference"
-              label="Reference Track"
-            />
-          )}
-
-          {/* Status Messages */}
-          {status.message && (
-            <div className={`p-4 rounded-xl border-l-4 ${
-              status.type === 'error' 
-                ? 'bg-red-50 border-red-500 text-red-700'
-                : status.type === 'success'
-                  ? 'bg-green-50 border-green-500 text-green-700'
-                  : 'bg-blue-50 border-blue-500 text-blue-700'
-            }`}>
-              <p className="text-sm font-medium">{status.message}</p>
-            </div>
-          )}
-
-          {/* Generate Button */}
-          <button
-            disabled={loading}
-            onClick={handleGenerate}
-            className={`w-full py-4 rounded-xl font-semibold transition-all duration-200 ${
-              loading
-                ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                : 'bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white shadow-lg hover:shadow-xl transform hover:-translate-y-0.5'
-            }`}
+    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900">
+      {/* Header */}
+      <nav className="px-6 py-4 border-b border-white/10">
+        <div className="max-w-6xl mx-auto flex justify-between items-center">
+          <div className="text-2xl font-bold text-white">🎵 {COMPANY_NAME}</div>
+          <button 
+            onClick={() => window.location.href = '/'}
+            className="px-4 py-2 bg-white/10 hover:bg-white/20 text-white rounded-lg transition-colors"
           >
-            {loading ? (
-              <div className="flex items-center justify-center space-x-2">
-                <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-gray-500"></div>
-                <span>Preparing...</span>
-              </div>
-            ) : (
-              `Generate Master${masteringMode === 'preset' ? ` (${preset})` : ' (Reference)'}`
-            )}
+            Home
           </button>
         </div>
+      </nav>
 
-        {/* Footer */}
-        <div className="text-center mt-6 text-gray-400 text-sm">
-          <p>Professional audio mastering • Powered by AI • Maximum file size: 100MB</p>
+      <div className="flex items-center justify-center px-4 py-8 min-h-[calc(100vh-80px)]">
+        <div className="w-full max-w-2xl">
+          {/* Header */}
+          <div className="text-center mb-8">
+            <h1 className="text-4xl font-bold text-white mb-2">AI Audio Mastering</h1>
+            <p className="text-gray-300">Professional mastering powered by artificial intelligence</p>
+          </div>
+
+          {/* Main Card */}
+          <div className="bg-white rounded-2xl shadow-2xl p-8 space-y-6">
+            
+            {/* Source Track Upload */}
+            <FileUploadZone
+              file={sourceTrack}
+              onFileSelect={handleFileSelect}
+              onClear={clearFile}
+              type="source"
+              label="Source Track"
+              required
+            />
+
+            {/* Mastering Mode Selection */}
+            <div className="space-y-4">
+              <label className="block text-sm font-semibold text-gray-700">
+                Mastering Method
+              </label>
+              
+              <div className="grid grid-cols-2 gap-4">
+                <button
+                  onClick={() => setMasteringMode('preset')}
+                  className={`p-4 rounded-xl border-2 transition-all duration-200 ${
+                    masteringMode === 'preset'
+                      ? 'border-blue-500 bg-blue-50 text-blue-700'
+                      : 'border-gray-200 hover:border-gray-300 text-gray-600'
+                  }`}
+                >
+                  <div className="text-center">
+                    <div className="w-8 h-8 mx-auto mb-2 bg-gradient-to-r from-purple-500 to-pink-500 rounded-lg flex items-center justify-center">
+                      <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 100 4m0-4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 100 4m0-4v2m0-6V4" />
+                      </svg>
+                    </div>
+                    <p className="font-medium">Use Preset</p>
+                    <p className="text-xs opacity-75">AI-optimized settings</p>
+                  </div>
+                </button>
+                
+                <button
+                  onClick={() => setMasteringMode('reference')}
+                  className={`p-4 rounded-xl border-2 transition-all duration-200 ${
+                    masteringMode === 'reference'
+                      ? 'border-blue-500 bg-blue-50 text-blue-700'
+                      : 'border-gray-200 hover:border-gray-300 text-gray-600'
+                  }`}
+                >
+                  <div className="text-center">
+                    <div className="w-8 h-8 mx-auto mb-2 bg-gradient-to-r from-green-500 to-teal-500 rounded-lg flex items-center justify-center">
+                      <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19V6l12-3v13M9 19a2 2 0 01-2 2H5a2 2 0 01-2-2V6a2 2 0 012-2h2a2 2 0 012 2v13zM9 19a2 2 0 002 2h2a2 2 0 002-2V9M9 19V9" />
+                      </svg>
+                    </div>
+                    <p className="font-medium">Reference Track</p>
+                    <p className="text-xs opacity-75">Match another song</p>
+                  </div>
+                </button>
+              </div>
+            </div>
+
+            {/* Conditional Content */}
+            {masteringMode === 'preset' ? (
+              <div className="space-y-2">
+                <label className="block text-sm font-semibold text-gray-700">Genre Preset</label>
+                <select
+                  className="w-full border-2 border-gray-200 px-4 py-3 rounded-xl bg-white text-gray-800 focus:border-blue-500 focus:outline-none transition-colors"
+                  value={preset}
+                  onChange={(e) => setPreset(e.target.value)}
+                >
+                  <option value="Hip Hop">🎤 Hip Hop</option>
+                  <option value="EDM">🎛️ EDM</option>
+                  <option value="Podcast">🎙️ Podcast</option>
+                  <option value="Lo-Fi">🌙 Lo-Fi</option>
+                  <option value="Pop">🎵 Pop</option>
+                  <option value="Rock">🎸 Rock</option>
+                  <option value="Jazz">🎺 Jazz</option>
+                  <option value="Classical">🎻 Classical</option>
+                </select>
+              </div>
+            ) : (
+              <FileUploadZone
+                file={referenceTrack}
+                onFileSelect={handleFileSelect}
+                onClear={clearFile}
+                type="reference"
+                label="Reference Track"
+              />
+            )}
+
+            {/* Status Messages */}
+            {status.message && (
+              <div className={`p-4 rounded-xl border-l-4 ${
+                status.type === 'error' 
+                  ? 'bg-red-50 border-red-500 text-red-700'
+                  : status.type === 'success'
+                    ? 'bg-green-50 border-green-500 text-green-700'
+                    : 'bg-blue-50 border-blue-500 text-blue-700'
+              }`}>
+                <p className="text-sm font-medium">{status.message}</p>
+              </div>
+            )}
+
+            {/* Generate Button */}
+            <button
+              disabled={loading}
+              onClick={handleGenerate}
+              className={`w-full py-4 rounded-xl font-semibold transition-all duration-200 ${
+                loading
+                  ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                  : 'bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white shadow-lg hover:shadow-xl transform hover:-translate-y-0.5'
+              }`}
+            >
+              {loading ? (
+                <div className="flex items-center justify-center space-x-2">
+                  <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-gray-500"></div>
+                  <span>Preparing...</span>
+                </div>
+              ) : (
+                `Generate Master${masteringMode === 'preset' ? ` (${preset})` : ' (Reference)'}`
+              )}
+            </button>
+          </div>
+
+          {/* Footer */}
+          <div className="text-center mt-6 text-gray-400 text-sm">
+            <p>Professional audio mastering • Powered by AI • Maximum file size: 100MB</p>
+          </div>
         </div>
       </div>
     </div>

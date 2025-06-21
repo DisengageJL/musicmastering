@@ -28,7 +28,7 @@ export default function PaymentPage() {
   const plans = {
     single: {
       name: 'Single Track',
-      price: 9.99,
+      price: 5.00,
       description: 'One-time payment for this track',
       features: [
         'Professional AI mastering',
@@ -36,12 +36,12 @@ export default function PaymentPage() {
         'Download once',
         'Standard processing'
       ],
-      buttonText: 'Pay $9.99',
+      buttonText: 'Pay $5.00',
       popular: false
     },
     monthly: {
       name: 'Monthly Unlimited',
-      price: 29.00,
+      price: 15.00,
       description: 'Unlimited mastering for 30 days',
       features: [
         'Unlimited track mastering',
@@ -74,92 +74,34 @@ export default function PaymentPage() {
       
       sessionStorage.setItem('paymentData', JSON.stringify(paymentData));
       
-      if (planType === 'single') {
-        // For single payment, simulate Stripe checkout
-        await simulateStripeCheckout(paymentData);
-      } else {
-        // For subscription, redirect to Stripe subscription checkout
-        await handleSubscriptionCheckout(paymentData);
+      // Create Stripe checkout session
+      const response = await fetch('/api/create-checkout-session', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          priceType: planType,
+          trackInfo: trackInfo,
+          successUrl: `${window.location.origin}/processing?paymentConfirmed=true&track=${encodeURIComponent(trackInfo.name)}&preset=${encodeURIComponent(trackInfo.preset)}&mode=${trackInfo.mode}&hasReference=${trackInfo.hasReference}`,
+          cancelUrl: window.location.href
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to create checkout session');
       }
+
+      const { url } = await response.json();
+      
+      // Redirect to Stripe Checkout
+      window.location.href = url;
       
     } catch (error) {
       console.error('Payment failed:', error);
       alert('Payment failed. Please try again.');
       setLoading(false);
     }
-  };
-
-  const simulateStripeCheckout = async (paymentData: any) => {
-    console.log('🔐 Simulating Stripe single payment...');
-    
-    // In real app, this would be:
-    // const response = await fetch('/api/create-payment-intent', {
-    //   method: 'POST',
-    //   headers: { 'Content-Type': 'application/json' },
-    //   body: JSON.stringify(paymentData)
-    // });
-    
-    // Simulate payment processing
-    await new Promise(resolve => setTimeout(resolve, 2000));
-    
-    // Mark payment as confirmed
-    sessionStorage.setItem('paymentConfirmed', JSON.stringify({
-      ...paymentData,
-      paymentId: 'pi_demo_' + Math.random().toString(36).substr(2, 9),
-      paymentType: 'single'
-    }));
-    
-    console.log('✅ Single payment confirmed');
-    
-    // Redirect to processing with payment confirmation
-    const params = new URLSearchParams({
-      track: trackInfo.name,
-      preset: trackInfo.preset,
-      mode: trackInfo.mode,
-      hasReference: trackInfo.hasReference.toString(),
-      paymentConfirmed: 'true',
-      paymentId: 'pi_demo_123'
-    });
-    
-    window.location.href = `/processing?${params}`;
-  };
-
-  const handleSubscriptionCheckout = async (paymentData: any) => {
-    console.log('🔐 Creating Stripe subscription checkout...');
-    
-    // In real app, this would create a Stripe checkout session:
-    // const response = await fetch('/api/create-checkout-session', {
-    //   method: 'POST',
-    //   headers: { 'Content-Type': 'application/json' },
-    //   body: JSON.stringify({
-    //     priceId: 'price_monthly_unlimited', // Your Stripe price ID
-    //     successUrl: `${window.location.origin}/processing?paymentConfirmed=true&subscription=true`,
-    //     cancelUrl: window.location.href
-    //   })
-    // });
-    
-    // For demo, simulate subscription creation
-    await new Promise(resolve => setTimeout(resolve, 2000));
-    
-    sessionStorage.setItem('paymentConfirmed', JSON.stringify({
-      ...paymentData,
-      subscriptionId: 'sub_demo_' + Math.random().toString(36).substr(2, 9),
-      paymentType: 'monthly'
-    }));
-    
-    console.log('✅ Subscription payment confirmed');
-    
-    // Redirect to processing
-    const params = new URLSearchParams({
-      track: trackInfo.name,
-      preset: trackInfo.preset,
-      mode: trackInfo.mode,
-      hasReference: trackInfo.hasReference.toString(),
-      paymentConfirmed: 'true',
-      subscription: 'true'
-    });
-    
-    window.location.href = `/processing?${params}`;
   };
 
   return (

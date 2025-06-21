@@ -39,3 +39,12 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Additional logs
+*.log
+
+# Uploads folder (for your audio files)
+/uploads/
+
+# Public downloads (generated mastered files)
+/public/downloads/
