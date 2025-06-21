@@ -4,7 +4,6 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 
 type UserType = 'single' | 'subscription' | null;
 
-// Client-side analysis interface (your original)
 interface AudioAnalysis {
   rms: number;
   peak: number;
@@ -15,7 +14,6 @@ interface AudioAnalysis {
   spectralCentroid: number;
 }
 
-// Server-side FFmpeg processing result interface
 interface ProcessingResult {
   success: boolean;
   sessionId: string;
@@ -33,7 +31,6 @@ interface ProcessingResult {
   settings?: any;
 }
 
-// Server-side analysis interface (from FFmpeg)
 interface ServerAudioAnalysis {
   duration: number;
   sampleRate: number;
@@ -50,9 +47,9 @@ interface TrackData {
   masteredFile: string;
   preset: string;
   processingTime: string;
-  originalAnalysis: AudioAnalysis | null;        // Client-side analysis
-  masteredAnalysis: AudioAnalysis | null;        // Client-side analysis
-  processingResult: ProcessingResult | null;     // Server-side FFmpeg results
+  originalAnalysis: AudioAnalysis | null;
+  masteredAnalysis: AudioAnalysis | null;
+  processingResult: ProcessingResult | null;
 }
 
 interface AudioState {
@@ -80,18 +77,15 @@ const DEFAULT_VOLUME = 0.8;
 const SUBSCRIPTION_COUNTDOWN = 300;
 
 export default function ResultsPage() {
-  // Audio playback state
   const [isPlaying, setIsPlaying] = useState<AudioState>({ original: false, mastered: false });
   const [currentTime, setCurrentTime] = useState<TimeState>({ original: 0, mastered: 0 });
   const [duration, setDuration] = useState<TimeState>({ original: 0, mastered: 0 });
   const [volume, setVolume] = useState<VolumeState>({ original: DEFAULT_VOLUME, mastered: DEFAULT_VOLUME });
   
-  // Analysis state (your original features)
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [analysisProgress, setAnalysisProgress] = useState(0);
   const [analysisMode, setAnalysisMode] = useState<'client' | 'server' | 'both'>('both');
   
-  // UI state
   const [downloadProgress, setDownloadProgress] = useState(0);
   const [isDownloading, setIsDownloading] = useState(false);
   const [showShareModal, setShowShareModal] = useState(false);
@@ -100,33 +94,27 @@ export default function ResultsPage() {
   const [error, setError] = useState<string | null>(null);
   const [comparisonMode, setComparisonMode] = useState<'separate' | 'sync'>('separate');
   
-  // Subscription state
   const [userType, setUserType] = useState<UserType>(null);
   const [showSubscriptionModal, setShowSubscriptionModal] = useState(false);
   const [subscriptionModalStep, setSubscriptionModalStep] = useState(1);
   const [timeLeft, setTimeLeft] = useState(SUBSCRIPTION_COUNTDOWN);
   
-  // Data state
   const [trackData, setTrackData] = useState<TrackData | null>(null);
   const [audioSources, setAudioSources] = useState<AudioSources | null>(null);
   
-  // Refs (your original)
   const originalAudioRef = useRef<HTMLAudioElement>(null);
   const masteredAudioRef = useRef<HTMLAudioElement>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
 
-  // Initialize component data
   useEffect(() => {
     initializeTrackData();
     return () => {
-      // Cleanup audio context (your original)
       if (audioContextRef.current) {
         audioContextRef.current.close();
       }
     };
   }, []);
 
-  // Countdown timer for subscription modal
   useEffect(() => {
     if (showSubscriptionModal && timeLeft > 0) {
       const timer = setTimeout(() => setTimeLeft(timeLeft - 1), 1000);
@@ -134,7 +122,6 @@ export default function ResultsPage() {
     }
   }, [showSubscriptionModal, timeLeft]);
 
-  // Your original audio analysis functions
   const initializeAudioContext = useCallback(async () => {
     if (!audioContextRef.current) {
       try {
@@ -155,7 +142,6 @@ export default function ResultsPage() {
     const sampleRate = audioBuffer.sampleRate;
     const length = channelData.length;
     
-    // Calculate RMS (Root Mean Square)
     let rmsSum = 0;
     let peak = 0;
     
@@ -166,17 +152,13 @@ export default function ResultsPage() {
     }
     
     const rms = Math.sqrt(rmsSum / length);
-    
-    // Calculate LUFS (approximation)
     const lufs = -23 + 20 * Math.log10(rms / 0.691);
     
-    // Calculate dynamic range (simplified)
     const sortedSamples = Array.from(channelData).map(Math.abs).sort((a, b) => b - a);
     const percentile95 = sortedSamples[Math.floor(sortedSamples.length * 0.05)];
     const percentile10 = sortedSamples[Math.floor(sortedSamples.length * 0.90)];
     const dynamicRange = 20 * Math.log10(percentile95 / Math.max(percentile10, 0.001));
     
-    // Calculate stereo width (if stereo)
     let stereoWidth = 0;
     if (audioBuffer.numberOfChannels === 2) {
       const rightChannel = audioBuffer.getChannelData(1);
@@ -196,12 +178,10 @@ export default function ResultsPage() {
       stereoWidth = (1 - Math.abs(normalizedCorrelation)) * 100;
     }
     
-    // FFT for frequency analysis (simplified)
     const fftSize = Math.pow(2, Math.floor(Math.log2(Math.min(length, 2048))));
     const fftData = channelData.slice(0, fftSize);
     const frequencySpectrum = new Float32Array(fftSize / 2);
     
-    // Simple DFT for demonstration (in production, use proper FFT)
     for (let k = 0; k < frequencySpectrum.length; k++) {
       let real = 0;
       let imag = 0;
@@ -213,7 +193,6 @@ export default function ResultsPage() {
       frequencySpectrum[k] = Math.sqrt(real * real + imag * imag);
     }
     
-    // Calculate spectral centroid
     let weightedSum = 0;
     let magnitudeSum = 0;
     for (let i = 0; i < frequencySpectrum.length; i++) {
@@ -237,12 +216,9 @@ export default function ResultsPage() {
   const analyzeAudioFile = useCallback(async (audioElement: HTMLAudioElement): Promise<AudioAnalysis | null> => {
     try {
       const audioContext = await initializeAudioContext();
-      
-      // Create audio buffer from the audio element
       const response = await fetch(audioElement.src);
       const arrayBuffer = await response.arrayBuffer();
       const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
-      
       return await analyzeAudioBuffer(audioBuffer);
     } catch (error) {
       console.error('Error analyzing audio:', error);
@@ -257,17 +233,14 @@ export default function ResultsPage() {
     setAnalysisProgress(0);
     
     try {
-      // Analyze original audio
       setAnalysisProgress(25);
       const originalAnalysis = await analyzeAudioFile(originalAudioRef.current);
       
       setAnalysisProgress(75);
-      // Analyze mastered audio
       const masteredAnalysis = await analyzeAudioFile(masteredAudioRef.current);
       
       setAnalysisProgress(100);
       
-      // Update track data with analysis results
       setTrackData(prev => prev ? {
         ...prev,
         originalAnalysis,
@@ -286,13 +259,11 @@ export default function ResultsPage() {
     try {
       setIsLoading(true);
       
-      // Get processing results from URL params or session storage
       const searchParams = new URLSearchParams(window.location.search);
       const trackName = searchParams.get('track') || 'Your Track';
       const preset = searchParams.get('preset') || 'Hip Hop';
       const downloadUrl = searchParams.get('downloadUrl');
       
-      // Get stored processing data and results
       const processingData = sessionStorage.getItem('processingData');
       const processingResultStr = sessionStorage.getItem('processingResult');
       
@@ -316,7 +287,6 @@ export default function ResultsPage() {
         processingResult: processingResult
       };
 
-      // Update with real processing results if available
       if (processingResult) {
         finalTrackData.masteredFile = processingResult.downloadUrl || downloadUrl || '';
       }
@@ -324,7 +294,6 @@ export default function ResultsPage() {
       setTrackData(finalTrackData);
       await setupAudioSources(processingData, finalTrackData);
       
-      // Determine user type
       const paymentConfirmed = sessionStorage.getItem('paymentConfirmed');
       if (paymentConfirmed) {
         const paymentData = JSON.parse(paymentConfirmed);
@@ -346,40 +315,35 @@ export default function ResultsPage() {
     let masteredSrc = '';
 
     try {
-      // Try to get real processing results first
       if (trackData.processingResult?.success) {
-        console.log('✅ Using real FFmpeg processed audio:', trackData.processingResult.downloadUrl);
+        console.log('Using real FFmpeg processed audio:', trackData.processingResult.downloadUrl);
         masteredSrc = trackData.processingResult.downloadUrl;
       }
 
-      // Try to get the original uploaded file
       if (processingData) {
         const data = JSON.parse(processingData);
         if (data.sourceFile?.url) {
-          console.log('✅ Using original uploaded file');
+          console.log('Using original uploaded file');
           originalSrc = data.sourceFile.url;
         }
       }
 
-      // Check for real files via global variables (backup method)
       if (!originalSrc && (window as any).pendingSourceFile) {
         const sourceFile = (window as any).pendingSourceFile;
         if (sourceFile instanceof File) {
           originalSrc = URL.createObjectURL(sourceFile);
-          console.log('✅ Using pending source file');
+          console.log('Using pending source file');
         }
       }
 
-      // Only use demo if no real files available
       if (!originalSrc || !masteredSrc) {
-        console.log('⚠️ Missing audio files, analysis will be limited');
+        console.log('Missing audio files, analysis will be limited');
         if (!originalSrc) originalSrc = '#';
         if (!masteredSrc) masteredSrc = '#';
       }
 
       setAudioSources({ original: originalSrc, mastered: masteredSrc });
 
-      // Set up audio elements once sources are ready
       if (originalSrc !== '#' && masteredSrc !== '#') {
         setTimeout(() => {
           setupAudioElements(originalSrc, masteredSrc);
@@ -406,7 +370,6 @@ export default function ResultsPage() {
     }
   }, [volume]);
 
-  // Auto-analyze when both audio files are loaded (your original feature)
   useEffect(() => {
     if (originalAudioRef.current?.src && masteredAudioRef.current?.src && 
         originalAudioRef.current.src !== '#' && masteredAudioRef.current.src !== '#' && 
@@ -422,16 +385,13 @@ export default function ResultsPage() {
     if (!audioRef.current || audioRef.current.src === '#') return;
 
     try {
-      // In sync mode, sync the other audio
       if (comparisonMode === 'sync') {
         if (otherAudioRef.current && otherAudioRef.current.src !== '#') {
           if (isPlaying[type]) {
-            // Pause both
             audioRef.current.pause();
             otherAudioRef.current.pause();
             setIsPlaying({ original: false, mastered: false });
           } else {
-            // Sync time and play both
             const currentPos = audioRef.current.currentTime;
             otherAudioRef.current.currentTime = currentPos;
             
@@ -442,13 +402,11 @@ export default function ResultsPage() {
               setIsPlaying({ original: true, mastered: true });
             }).catch(e => {
               console.warn('Sync play failed:', e);
-              // Fallback to single play
               audioRef.current?.play();
               setIsPlaying(prev => ({ ...prev, [type]: true }));
             });
           }
         } else {
-          // Only one audio available
           if (isPlaying[type]) {
             audioRef.current.pause();
           } else {
@@ -457,7 +415,6 @@ export default function ResultsPage() {
           setIsPlaying(prev => ({ ...prev, [type]: !prev[type] }));
         }
       } else {
-        // Separate mode - pause other, toggle current
         if (otherAudioRef.current && !otherAudioRef.current.paused) {
           otherAudioRef.current.pause();
           setIsPlaying(prev => ({ ...prev, [type === 'original' ? 'mastered' : 'original']: false }));
@@ -484,12 +441,11 @@ export default function ResultsPage() {
     if (audioRef.current) {
       setCurrentTime(prev => ({ ...prev, [type]: audioRef.current!.currentTime }));
       
-      // In sync mode, keep audio synchronized
       if (comparisonMode === 'sync' && isPlaying.original && isPlaying.mastered) {
         const otherAudioRef = type === 'original' ? masteredAudioRef : originalAudioRef;
         if (otherAudioRef.current) {
           const timeDiff = Math.abs(audioRef.current.currentTime - otherAudioRef.current.currentTime);
-          if (timeDiff > 0.1) { // Resync if drift > 100ms
+          if (timeDiff > 0.1) {
             otherAudioRef.current.currentTime = audioRef.current.currentTime;
           }
         }
@@ -510,7 +466,6 @@ export default function ResultsPage() {
       audioRef.current.currentTime = time;
       setCurrentTime(prev => ({ ...prev, [type]: time }));
       
-      // In sync mode, seek both audio files
       if (comparisonMode === 'sync') {
         const otherAudioRef = type === 'original' ? masteredAudioRef : originalAudioRef;
         if (otherAudioRef.current && otherAudioRef.current.src !== '#') {
@@ -605,14 +560,13 @@ export default function ResultsPage() {
     try {
       const masteredFilename = generateMasteredFilename(trackData.title);
       
-      // Check if we have a real processed file from FFmpeg
       let realDownloadUrl = null;
       if (trackData.processingResult?.success) {
         realDownloadUrl = trackData.processingResult.downloadUrl;
       }
       
       if (realDownloadUrl) {
-        console.log('📥 Downloading real FFmpeg processed file:', realDownloadUrl);
+        console.log('Downloading real FFmpeg processed file:', realDownloadUrl);
         const response = await fetch(realDownloadUrl);
         const blob = await response.blob();
         const url = URL.createObjectURL(blob);
@@ -627,7 +581,7 @@ export default function ResultsPage() {
         
         URL.revokeObjectURL(url);
       } else if (trackData.masteredFile && trackData.masteredFile !== '#') {
-        console.log('📥 Downloading fallback file:', trackData.masteredFile);
+        console.log('Downloading fallback file:', trackData.masteredFile);
         const link = document.createElement('a');
         link.href = trackData.masteredFile;
         link.download = masteredFilename;
@@ -650,7 +604,7 @@ export default function ResultsPage() {
   }, [trackData, userType, generateMasteredFilename]);
 
   const handleSubscriptionUpgrade = useCallback(async () => {
-    console.log('🔐 Redirecting to Stripe checkout for $15/month...');
+    console.log('Redirecting to Stripe checkout for $15/month...');
     
     try {
       const response = await fetch('/api/create-checkout-session', {
@@ -710,7 +664,6 @@ export default function ResultsPage() {
         aria-label={`${title} audio player`}
       />
 
-      {/* Real-time Waveform Visualization (YOUR ORIGINAL FEATURE) */}
       <div className="relative mb-4 h-16 bg-gray-100 rounded-lg overflow-hidden">
         <div className="absolute inset-0 flex items-center justify-center">
           <div className="flex items-end space-x-1 h-12" role="img" aria-label="Audio waveform">
@@ -755,7 +708,7 @@ export default function ResultsPage() {
           tabIndex={0}
           onKeyDown={(e) => {
             if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
-              const step = 5; // 5 seconds
+              const step = 5;
               const newTime = e.key === 'ArrowLeft' 
                 ? Math.max(0, currentTime[type] - step)
                 : Math.min(duration[type], currentTime[type] + step);
@@ -765,7 +718,6 @@ export default function ResultsPage() {
         />
       </div>
 
-      {/* Controls */}
       <div className="flex items-center justify-between">
         <div className="flex items-center space-x-4">
           <button
@@ -815,7 +767,6 @@ export default function ResultsPage() {
     </div>
   );
 
-  // Loading state
   if (isLoading) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 flex items-center justify-center">
@@ -827,7 +778,6 @@ export default function ResultsPage() {
     );
   }
 
-  // Error state
   if (error) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 flex items-center justify-center">
@@ -850,7 +800,6 @@ export default function ResultsPage() {
     );
   }
 
-  // No track data
   if (!trackData) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 flex items-center justify-center">
@@ -864,12 +813,10 @@ export default function ResultsPage() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900">
-      {/* Header */}
       <nav className="px-6 py-4 border-b border-white/10">
         <div className="max-w-6xl mx-auto flex justify-between items-center">
           <div className="text-2xl font-bold text-white">🎵 {COMPANY_NAME}</div>
           <div className="flex items-center space-x-4">
-            {/* Analysis Mode Toggle */}
             <div className="flex items-center space-x-2 bg-white/10 rounded-lg p-1">
               <button
                 onClick={() => setAnalysisMode('client')}
@@ -902,7 +849,6 @@ export default function ResultsPage() {
                 Both
               </button>
             </div>
-            {/* Comparison Mode Toggle */}
             <div className="flex items-center space-x-2 bg-white/10 rounded-lg p-1">
               <button
                 onClick={() => setComparisonMode('separate')}
@@ -938,7 +884,6 @@ export default function ResultsPage() {
       <div className="px-6 py-8">
         <div className="max-w-6xl mx-auto">
           
-          {/* Success Header */}
           <div className="text-center mb-8">
             <div className="w-16 h-16 mx-auto mb-4 bg-green-500 rounded-full flex items-center justify-center">
               <svg className="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
@@ -953,7 +898,6 @@ export default function ResultsPage() {
             )}
           </div>
 
-          {/* Analysis Progress (YOUR ORIGINAL FEATURE) */}
           {isAnalyzing && (
             <div className="bg-blue-500/10 border border-blue-500/30 rounded-xl p-4 mb-6">
               <div className="flex items-center space-x-3">
@@ -971,22 +915,18 @@ export default function ResultsPage() {
             </div>
           )}
 
-          {/* Audio Players */}
           <div className="grid md:grid-cols-2 gap-6 mb-8">
             <AudioPlayer type="original" title="Original Track" />
             <AudioPlayer type="mastered" title="Mastered Track" />
           </div>
 
-          {/* Combined Analysis Results */}
           <div className="space-y-6 mb-8">
             
-            {/* Client-Side Analysis (YOUR ORIGINAL) */}
             {(analysisMode === 'client' || analysisMode === 'both') && trackData.originalAnalysis && trackData.masteredAnalysis && (
               <div className="bg-white/5 backdrop-blur-sm rounded-2xl p-6">
                 <h3 className="text-xl font-bold text-white mb-6">📊 Client-Side Audio Analysis & Improvements</h3>
                 
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                  {/* Loudness */}
                   <div className="text-center">
                     <h4 className="text-sm text-gray-300 mb-2">Loudness (LUFS)</h4>
                     <div className="text-lg text-red-400 mb-1">
@@ -1001,7 +941,6 @@ export default function ResultsPage() {
                     </div>
                   </div>
 
-                  {/* Dynamic Range */}
                   <div className="text-center">
                     <h4 className="text-sm text-gray-300 mb-2">Dynamic Range</h4>
                     <div className="text-lg text-yellow-400 mb-1">
@@ -1016,7 +955,6 @@ export default function ResultsPage() {
                     </div>
                   </div>
 
-                  {/* Stereo Width */}
                   <div className="text-center">
                     <h4 className="text-sm text-gray-300 mb-2">Stereo Width</h4>
                     <div className="text-lg text-blue-400 mb-1">
@@ -1031,7 +969,6 @@ export default function ResultsPage() {
                     </div>
                   </div>
 
-                  {/* Spectral Centroid */}
                   <div className="text-center">
                     <h4 className="text-sm text-gray-300 mb-2">Brightness</h4>
                     <div className="text-lg text-purple-400 mb-1">
@@ -1055,13 +992,11 @@ export default function ResultsPage() {
               </div>
             )}
 
-            {/* Server-Side FFmpeg Analysis */}
             {(analysisMode === 'server' || analysisMode === 'both') && trackData.processingResult && (
               <div className="bg-white/5 backdrop-blur-sm rounded-2xl p-6">
                 <h3 className="text-xl font-bold text-white mb-6">🔧 FFmpeg Server-Side Processing Results</h3>
                 
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                  {/* Loudness Change */}
                   <div className="text-center">
                     <h4 className="text-sm text-gray-300 mb-2">Loudness Change</h4>
                     <div className="text-lg text-red-400 mb-1">
@@ -1076,7 +1011,6 @@ export default function ResultsPage() {
                     </div>
                   </div>
 
-                  {/* Peak Level */}
                   <div className="text-center">
                     <h4 className="text-sm text-gray-300 mb-2">Peak Level</h4>
                     <div className="text-lg text-yellow-400 mb-1">
@@ -1091,7 +1025,6 @@ export default function ResultsPage() {
                     </div>
                   </div>
 
-                  {/* Format Improvement */}
                   <div className="text-center">
                     <h4 className="text-sm text-gray-300 mb-2">Format</h4>
                     <div className="text-lg text-blue-400 mb-1">
@@ -1106,7 +1039,6 @@ export default function ResultsPage() {
                     </div>
                   </div>
 
-                  {/* File Size */}
                   <div className="text-center">
                     <h4 className="text-sm text-gray-300 mb-2">Output Size</h4>
                     <div className="text-lg text-green-400 mb-2">
@@ -1118,7 +1050,6 @@ export default function ResultsPage() {
                   </div>
                 </div>
 
-                {/* Technical Details */}
                 <div className="mt-6 grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div className="bg-white/5 rounded-lg p-4">
                     <h4 className="text-white font-semibold mb-3">Original Analysis</h4>
@@ -1173,7 +1104,6 @@ export default function ResultsPage() {
               </div>
             )}
 
-            {/* Fallback for no analysis */}
             {(!trackData.originalAnalysis || !trackData.masteredAnalysis) && !trackData.processingResult && !isAnalyzing && (
               <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-xl p-6">
                 <h3 className="text-xl font-bold text-yellow-300 mb-4">⚠️ Limited Analysis Available</h3>
@@ -1191,7 +1121,6 @@ export default function ResultsPage() {
             )}
           </div>
 
-          {/* Action Buttons */}
           <div className="flex flex-col sm:flex-row gap-4 justify-center items-center mb-8">
             <button
               onClick={handleDownload}
@@ -1232,7 +1161,6 @@ export default function ResultsPage() {
             </button>
           </div>
 
-          {/* Progress Bar for Download */}
           {isDownloading && (
             <div className="max-w-md mx-auto mb-8">
               <div className="w-full bg-gray-700 rounded-full h-2">
@@ -1250,7 +1178,6 @@ export default function ResultsPage() {
         </div>
       </div>
 
-      {/* Subscription Modal */}
       {showSubscriptionModal && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4" role="dialog" aria-modal="true" aria-labelledby="subscription-modal-title">
           <div className="bg-white rounded-2xl p-8 max-w-md w-full">
@@ -1304,7 +1231,6 @@ export default function ResultsPage() {
         </div>
       )}
 
-      {/* Share Modal */}
       {showShareModal && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4" role="dialog" aria-modal="true" aria-labelledby="share-modal-title">
           <div className="bg-white rounded-2xl p-8 max-w-md w-full">
